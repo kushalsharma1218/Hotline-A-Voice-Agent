@@ -1,0 +1,119 @@
+# Hotline stack: postgres + n8n + ingress.  Usage:
+#   cp .env.example .env   # then fill in real values
+#   docker compose up -d --build
+#   docker compose --profile setup run --rm n8n-import   # load n8n/workflows/*.json
+#
+# All images are pinned. Bump deliberately.
+
+x-n8n-env: &n8n-env
+  # Database: n8n stores its own tables in schema "public" of the shared DB.
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+  DB_POSTGRESDB_USER: ${POSTGRES_USER}
+  DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+  DB_POSTGRESDB_SCHEMA: public
+  # Core
+  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+  N8N_PORT: "5678"
+  WEBHOOK_URL: ${WEBHOOK_URL}
+  N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
+  GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
+  TZ: ${GENERIC_TIMEZONE:-UTC}
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+  # Code nodes: allow the JSON Schema validator (exact-match allowlist) and
+  # $env reads in expressions.
+  NODE_FUNCTION_ALLOW_EXTERNAL: ${NODE_FUNCTION_ALLOW_EXTERNAL:-@cfworker/json-schema}
+  N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+  # N8N_RUNNERS_INSECURE_MODE is intentionally off: it disables the Code-node sandbox; we use a no-codegen validator instead (contracts.md Amendment 3).
+  # n8n 2.x restricts "Read/Write Files from Disk" to ~/.n8n-files by default;
+  # the extractor reads prompt files from the read-only /prompts mount.
+  N8N_RESTRICT_FILE_ACCESS_TO: /prompts
+  # Read by workflows via $env (contracts.md).
+  SALESFORCE_INSTANCE_URL: ${SALESFORCE_INSTANCE_URL}
+  SLACK_APPROVAL_CHANNEL: ${SLACK_APPROVAL_CHANNEL}
+  SLACK_ALERT_CHANNEL: ${SLACK_ALERT_CHANNEL}
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on first init of an empty volume (docker compose down -v to rerun).
+      - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  n8n:
+    build: ./n8n
+    image: hotline-n8n:2.40.5
+    restart: unless-stopped
+    environment: *n8n-env
+    volumes:
+      - n8ndata:/home/node/.n8n
+      - ./prompts:/prompts:ro
+      - ./n8n/workflows:/workflows:ro
+    ports:
+      - "127.0.0.1:${N8N_HOST_PORT:-5678}:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ingress:
+    build: ./ingress
+    image: hotline-ingress:local
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Python is guaranteed in the ingress image; curl/wget may not be.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # One-shot: import committed workflows into n8n's DB.
+  #   docker compose --profile setup run --rm n8n-import
+  # Then restart n8n (docker compose restart n8n) so it picks up activation state.
+  # Credentials are not in the JSON; create them in the n8n UI and re-link.
+  n8n-import:
+    profiles: ["setup"]
+    image: hotline-n8n:2.40.5
+    build: ./n8n
+    environment: *n8n-env
+    volumes:
+      - n8ndata:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    command: ["import:workflow", "--separate", "--input=/workflows"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  n8ndata:

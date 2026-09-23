@@ -1,0 +1,29 @@
+[project]
+name = "hotline-ingress"
+version = "0.1.0"
+description = "Hotline ingress: verify ElevenLabs post-call webhooks, persist, forward to n8n"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.53.0",
+    "httpx==0.28.1",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "psycopg[binary]==3.3.6",
+    "psycopg-pool==3.3.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "respx==0.23.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+markers = ["integration: needs a real Postgres via DATABASE_URL"]

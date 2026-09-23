@@ -1,0 +1,225 @@
+{
+  "id": "HtlnErrorAlert00",
+  "name": "subwf_error_alert",
+  "nodes": [
+    {
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {},
+      "id": "a381265c-47ce-4c24-a388-4fb43aa48418"
+    },
+    {
+      "name": "Called by Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        420
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "workflow_name",
+              "type": "string"
+            },
+            {
+              "name": "workflow_id",
+              "type": "string"
+            },
+            {
+              "name": "execution_id",
+              "type": "string"
+            },
+            {
+              "name": "failed_node",
+              "type": "string"
+            },
+            {
+              "name": "error_message",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "634b6cc0-494c-459c-a219-d31c73b48968"
+    },
+    {
+      "name": "Alert Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35529127-0fff-40cd-aea6-619c4ab054c5",
+              "name": "N8N_EDITOR_BASE_URL",
+              "value": "={{ $env.N8N_EDITOR_BASE_URL || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c5a8618a-370e-429d-ad3b-b8b306ab4afd",
+              "name": "SLACK_ALERT_CHANNEL",
+              "value": "={{ $env.SLACK_ALERT_CHANNEL || \"#hotline-alerts\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5f91aec6-6690-4777-ae74-473232b94ffe"
+    },
+    {
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Normalise both entry points into one alert and build Slack Block Kit.\n//  - Error Trigger: {execution:{id,url,error,lastNodeExecuted}, workflow:{id,name}}\n//  - Called by Workflow: {conversation_id, workflow_name, workflow_id,\n//    execution_id, failed_node, error_message}\nconst j = $input.first().json;\nconst base = String(j.N8N_EDITOR_BASE_URL || '').replace(/\\/+$/, '');\n\nlet info;\nif (j.execution && typeof j.execution === 'object') {\n  const ex = j.execution;\n  const err = ex.error || {};\n  info = {\n    source: 'error_trigger',\n    conversation_id: null, // not available to an Error Trigger\n    workflow_name: (j.workflow && j.workflow.name) || 'unknown workflow',\n    workflow_id: (j.workflow && j.workflow.id) || null,\n    execution_id: ex.id || null,\n    failed_node: ex.lastNodeExecuted || (err.node && err.node.name) || 'unknown node',\n    error_message: [err.message, err.description].filter(Boolean).join(' | ') || 'Unknown error',\n    fallback_url: ex.url || null,\n  };\n} else {\n  info = {\n    source: 'workflow_call',\n    conversation_id: j.conversation_id || null,\n    workflow_name: j.workflow_name || 'unknown workflow',\n    workflow_id: j.workflow_id || null,\n    execution_id: j.execution_id || null,\n    failed_node: j.failed_node || 'unknown node',\n    error_message: j.error_message || 'Unknown error',\n    fallback_url: null,\n  };\n}\n\nconst link = base && info.workflow_id && info.execution_id\n  ? `${base}/workflow/${info.workflow_id}/executions/${info.execution_id}`\n  : info.fallback_url;\n\nconst esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst errText = String(info.error_message).replace(/```/g, \"'''\").slice(0, 2800);\n\nconst blocks = [\n  { type: 'header', text: { type: 'plain_text', text: 'Hotline failure', emoji: true } },\n  {\n    type: 'section',\n    fields: [\n      { type: 'mrkdwn', text: `*Workflow*\\n${esc(info.workflow_name)}` },\n      { type: 'mrkdwn', text: `*Conversation*\\n${info.conversation_id ? '`' + esc(info.conversation_id) + '`' : 'unknown'}` },\n      { type: 'mrkdwn', text: `*Failed node*\\n${esc(info.failed_node)}` },\n      { type: 'mrkdwn', text: `*Execution*\\n${link ? `<${link}|${esc(info.execution_id || 'open')}>` : esc(info.execution_id || 'unknown')}` },\n    ],\n  },\n  { type: 'section', text: { type: 'mrkdwn', text: '```' + errText + '```' } },\n];\n\nconst text = `Hotline failure in ${info.workflow_name} at ${info.failed_node}` +\n  (info.conversation_id ? ` (conversation ${info.conversation_id})` : '') + `: ${String(info.error_message).slice(0, 200)}`;\n\nreturn [{\n  json: {\n    ...info,\n    execution_url: link || null,\n    last_error: `${info.failed_node}: ${info.error_message}`.slice(0, 1000),\n    slack_channel: j.SLACK_ALERT_CHANNEL,\n    slack_text: text,\n    slack_blocks: { blocks },\n  },\n}];\n"
+      },
+      "id": "40be9882-54fd-4933-a88e-53ba455716fd"
+    },
+    {
+      "name": "Record Last Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Fill last_error only if the caller did not already write it (FAILED rows only).\nUPDATE hotline.call_events\n   SET last_error = left($2, 1000), updated_at = now()\n WHERE conversation_id = $1 AND status = 'FAILED' AND last_error IS NULL\nRETURNING conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id || null, $json.last_error ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "No-op when conversation_id is unknown (Error Trigger path). Never blocks the Slack post.",
+      "id": "7c8f0d61-26d8-4a0b-a30e-b8bb26868299"
+    },
+    {
+      "name": "Post Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Format Alert').first().json.slack_channel }}"
+        },
+        "messageType": "block",
+        "blocksUi": "={{ JSON.stringify($('Format Alert').first().json.slack_blocks) }}",
+        "text": "={{ $('Format Alert').first().json.slack_text }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "hotlineSlackBot0",
+          "name": "Slack Bot"
+        }
+      },
+      "id": "62ba53a8-8845-4ef4-a9e3-ad3f3787e1a5"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alert Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called by Workflow": {
+      "main": [
+        [
+          {
+            "node": "Alert Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Config": {
+      "main": [
+        [
+          {
+            "node": "Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [
+          {
+            "node": "Record Last Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Last Error": {
+      "main": [
+        [
+          {
+            "node": "Post Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

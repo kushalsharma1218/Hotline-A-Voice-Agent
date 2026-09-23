@@ -1,0 +1,19 @@
+{
+  "is_sales_lead": true,
+  "contact": {
+    "first_name": "Priya",
+    "last_name": "Nair",
+    "email": "priya@example.com",
+    "phone": null,
+    "company": "Brightline Dental",
+    "job_title": "Operations Manager"
+  },
+  "need_summary": "Wants an AI receptionist to answer after-hours calls and book appointments for three dental clinics.",
+  "budget": {"mentioned": true, "amount_usd": 2000, "period": "monthly"},
+  "timeline": "within_3_months",
+  "decision_maker": "yes",
+  "buying_intent_score": 8,
+  "intent_evidence": "Needs after-hours booking live this quarter, about $2k/month budget, and she signs off.",
+  "follow_up_required": true,
+  "call_summary": "Priya Nair, Operations Manager at Brightline Dental (3 clinics), wants an AI receptionist for after-hours calls and booking. Budget about $2,000/month, target go-live this quarter, she is the decision maker. Asked for a demo."
+}

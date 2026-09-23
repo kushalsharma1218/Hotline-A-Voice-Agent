@@ -1,0 +1,2063 @@
+{
+  "id": "HtlnPostCall0000",
+  "name": "wf_post_call",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "bbdae24e-3df0-4577-a67d-8201af10b91b",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hotline/post-call",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {
+          "responseCode": {
+            "values": {
+              "responseCode": "customCode",
+              "customCode": 202
+            }
+          },
+          "responseData": "{\"status\":\"accepted\"}"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hotlineIngressTk",
+          "name": "Hotline Ingress Token (header auth)"
+        }
+      },
+      "id": "a7abf137-178f-4305-ab5a-4a36475fc20d"
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        400
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e7b941d1-88f8-4d06-a397-3df7f763cda7",
+              "name": "INTENT_APPROVAL_THRESHOLD",
+              "value": 7,
+              "type": "number"
+            },
+            {
+              "id": "fa38deef-d91f-4d91-a081-8ab9ade807f9",
+              "name": "PROMPT_DIR",
+              "value": "lead_qualification/v1",
+              "type": "string"
+            },
+            {
+              "id": "c0edc3b8-3884-4008-aee4-74879d92db2f",
+              "name": "MODEL",
+              "value": "claude-sonnet-5",
+              "type": "string"
+            },
+            {
+              "id": "d17e5aa2-53ad-46b7-a48c-17be6affea60",
+              "name": "APPROVAL_TIMEOUT_H",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "8e9f8c5d-bfad-4343-ac06-e0a7ac6193cf",
+              "name": "MIN_USER_TURNS",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "644a697f-b655-4bc1-a86b-82495aa12f61",
+              "name": "SF_API_VERSION",
+              "value": "v62.0",
+              "type": "string"
+            },
+            {
+              "id": "7d11e42c-86b5-4352-ae96-6a90cf8e7cfb",
+              "name": "SALESFORCE_INSTANCE_URL",
+              "value": "={{ String($env.SALESFORCE_INSTANCE_URL || '').replace(/\\/+$/, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "48aa0714-6d4f-4fc4-a606-2002e28563c8",
+              "name": "SLACK_APPROVAL_CHANNEL",
+              "value": "={{ $env.SLACK_APPROVAL_CHANNEL || '#lead-approvals' }}",
+              "type": "string"
+            },
+            {
+              "id": "a210d944-aab2-4eb1-ab67-c20e7cb6c227",
+              "name": "conversation_id",
+              "value": "={{ $json.body.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "7b0134a2-e188-4b8b-af08-21d7e0dab65d",
+              "name": "agent_id",
+              "value": "={{ $json.body.agent_id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "3202fd24-f7f6-4e4a-ad77-1b5b1db4cdef",
+              "name": "received_at",
+              "value": "={{ $json.body.received_at || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f97f70e9-f9d8-4d44-a983-db7ec31f5a5f",
+              "name": "call_duration_secs",
+              "value": "={{ Number($json.body.call_duration_secs || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "9dd3719b-2d1f-41fe-ab69-2c2a815b17c7",
+              "name": "caller_phone",
+              "value": "={{ $json.body.caller_phone || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "3e018d39-72c9-4676-aee0-487a3e350c78",
+              "name": "user_turns",
+              "value": "={{ Number($json.body.user_turns || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "1931567e-4d50-414d-a915-660f143e0a68",
+              "name": "transcript_text",
+              "value": "={{ $json.body.transcript_text || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "Policy lives here: threshold, prompt folder, model, approval timeout, min user turns, Salesforce API version.",
+      "notesInFlow": true,
+      "id": "c87b53cd-e90f-43dd-ac94-21b3330f9767"
+    },
+    {
+      "name": "Too Short?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f2d1b5b3-8afc-425d-add8-c9cb8491a00b",
+              "leftValue": "={{ $json.user_turns }}",
+              "rightValue": "={{ $json.MIN_USER_TURNS }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bb0560fa-42d3-41de-a4b7-483a5b141952"
+    },
+    {
+      "name": "Log Too Short",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        220
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- First transition: ingress may not have recorded FORWARDED yet (it does so\n-- after our 202), so RECEIVED is accepted too (contracts.md Amendment 2).\nWITH moved AS (\n  UPDATE hotline.call_events SET status = 'LOGGED_ONLY', updated_at = now()\n   WHERE conversation_id = $1 AND status IN ('RECEIVED', 'FORWARDED')\n  RETURNING conversation_id\n), dec AS (\n  INSERT INTO hotline.decisions AS d (conversation_id, route, decided_at)\n  SELECT conversation_id, 'LOGGED_ONLY', now() FROM moved\n  ON CONFLICT (conversation_id) DO UPDATE\n     SET route = 'LOGGED_ONLY', decided_at = EXCLUDED.decided_at\n  RETURNING conversation_id\n)\nSELECT $1::text AS conversation_id, (SELECT count(*) FROM moved) AS status_moved;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "30ff0cd6-3976-4ad0-a07f-5f9359afd7d9"
+    },
+    {
+      "name": "Extract",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        480
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HtlnClaudeExtrct",
+          "mode": "list",
+          "cachedResultName": "subwf_claude_extract"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $json.conversation_id }}",
+            "transcript_text": "={{ $json.transcript_text }}",
+            "prompt_dir": "={{ $json.PROMPT_DIR }}",
+            "model": "={{ $json.MODEL }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "transcript_text",
+              "displayName": "transcript_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "prompt_dir",
+              "displayName": "prompt_dir",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "aebffb31-ea1a-44da-a494-5f002ffa17c8"
+    },
+    {
+      "name": "Extraction Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9b8ff966-b0da-4fa1-ac0c-f691157b20f5",
+              "leftValue": "={{ $json.valid === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "19e0c178-7e3a-4d70-a608-1031338e0338"
+    },
+    {
+      "name": "Extract Failure",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        700
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a13f342c-2f95-4f94-affd-b5a6828ba6fc",
+              "name": "conversation_id",
+              "value": "={{ $('Config').first().json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "5dc756da-64e7-4ae6-ae7a-4b6a215df909",
+              "name": "failed_node",
+              "value": "Extract",
+              "type": "string"
+            },
+            {
+              "id": "1a9443c3-2a48-49fe-aee3-d210daa34da6",
+              "name": "error_message",
+              "value": "={{ typeof $json.error === 'string' ? $json.error : JSON.stringify($json.error || $json.errors || 'unknown extraction error') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "b48ca49d-8dee-4e17-adfa-a6c05731efec"
+    },
+    {
+      "name": "Mark Failed (Extract)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1320,
+        700
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE hotline.call_events\n   SET status = 'FAILED', last_error = left($2, 1000), updated_at = now()\n WHERE conversation_id = $1 AND status IN ('RECEIVED', 'FORWARDED')\nRETURNING conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id, $json.failed_node + ': ' + $json.error_message ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "23227f0d-05b6-4eaa-a5bb-95f0eb3e508a"
+    },
+    {
+      "name": "Alert Extract Failed",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1540,
+        700
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HtlnErrorAlert00",
+          "mode": "list",
+          "cachedResultName": "subwf_error_alert"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $('Extract Failure').first().json.conversation_id }}",
+            "workflow_name": "={{ $workflow.name }}",
+            "workflow_id": "={{ $workflow.id }}",
+            "execution_id": "={{ $execution.id }}",
+            "failed_node": "={{ $('Extract Failure').first().json.failed_node }}",
+            "error_message": "={{ $('Extract Failure').first().json.error_message }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_id",
+              "displayName": "workflow_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "failed_node",
+              "displayName": "failed_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "21105d0a-5e72-4e5a-a834-278d7850c000"
+    },
+    {
+      "name": "Mark Extracted",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE hotline.call_events SET status = 'EXTRACTED', updated_at = now()\n WHERE conversation_id = $1 AND status IN ('RECEIVED', 'FORWARDED')\nRETURNING conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Config').first().json.conversation_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "5b273d7d-6959-46da-a172-d50fa95c42c2"
+    },
+    {
+      "name": "Extracted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "007d467b-a941-486a-abbd-5cc17da2dedf",
+              "leftValue": "={{ !!$json.conversation_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "0 rows = another run already moved this call: stop.",
+      "notesInFlow": true,
+      "id": "38859713-2021-480a-a316-356b52e0463a"
+    },
+    {
+      "name": "Lead Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// One place that joins config + call + validated extraction and pre-formats\n// the text used by Slack and Salesforce. Everything downstream reads\n// $('Lead Context').first().json.\nconst cfg = $('Config').first().json;\nconst ext = $('Extract').first().json;\nconst o = ext.output || {};\nconst c = o.contact || {};\nconst b = o.budget || {};\n\nconst s = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);\nconst human = (v) => (v ? String(v).replace(/_/g, ' ') : 'unknown');\n// Slack mrkdwn escaping, so caller-provided text cannot inject mentions or links.\nconst esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst score = Number(o.buying_intent_score);\nconst ratingBand = score >= 7 ? 'Hot' : score >= 4 ? 'Warm' : 'Cold';\n\nlet budgetText;\nif (!b.mentioned) {\n  budgetText = 'not mentioned';\n} else if (b.amount_usd === null || b.amount_usd === undefined) {\n  budgetText = 'mentioned, amount not stated' + (b.period && b.period !== 'unknown' ? ` (${human(b.period)})` : '');\n} else {\n  budgetText = '$' + Number(b.amount_usd).toLocaleString('en-US', { maximumFractionDigits: 2 }) +\n    (b.period && b.period !== 'unknown' ? ' ' + human(b.period) : '');\n}\n\nconst name = [s(c.first_name), s(c.last_name)].filter(Boolean).join(' ') || 'Unknown caller';\nconst company = s(c.company) || 'Unknown company';\nconst title = s(c.job_title);\nconst timeoutH = Number(cfg.APPROVAL_TIMEOUT_H);\n\nconst sfDescription = [\n  `Need: ${o.need_summary || 'not stated'}`,\n  `Budget: ${budgetText}`,\n  `Timeline: ${human(o.timeline)}`,\n  `Decision maker: ${human(o.decision_maker)}`,\n  `Intent evidence: ${o.intent_evidence || 'none'}`,\n  `Intent score: ${score}/10 (${ext.prompt_version}, ${ext.model})`,\n  `Conversation ID: ${cfg.conversation_id}`,\n].join('\\n');\n\nconst approvalMessage = [\n  '*Hot lead awaiting approval*',\n  `*Name:* ${esc(name)}${title ? ` (${esc(title)})` : ''}`,\n  `*Company:* ${esc(company)}`,\n  `*Intent score:* ${score}/10`,\n  `*Evidence:* ${esc(o.intent_evidence || 'none')}`,\n  `*Budget:* ${esc(budgetText)}`,\n  `*Timeline:* ${esc(human(o.timeline))}`,\n  `*Decision maker:* ${esc(human(o.decision_maker))}`,\n  `*Summary:* ${esc(o.call_summary || '')}`,\n  `_Approve writes a Hot Lead to Salesforce. Reject writes nothing. Expires in ${timeoutH} h. Conversation ${esc(cfg.conversation_id)}._`,\n].join('\\n');\n\nconst headerText = `:telephone_receiver: New hot lead needs approval: *${esc(name)}* (${esc(company)}), ` +\n  `intent ${score}/10. Details and decision in this thread.`;\n\nreturn [{\n  json: {\n    conversation_id: cfg.conversation_id,\n    caller_phone: s(cfg.caller_phone),\n    received_at: cfg.received_at,\n    threshold: Number(cfg.INTENT_APPROVAL_THRESHOLD),\n    approval_timeout_min: Math.max(1, Math.round(timeoutH * 60)),\n    sf_base: cfg.SALESFORCE_INSTANCE_URL,\n    sf_api_version: cfg.SF_API_VERSION,\n    approval_channel: cfg.SLACK_APPROVAL_CHANNEL,\n    prompt_version: ext.prompt_version,\n    model: ext.model,\n    extraction_attempt: ext.attempt,\n    output: o,\n    is_sales_lead: o.is_sales_lead === true,\n    score,\n    rating_band: ratingBand,\n    display_name: name,\n    company,\n    budget_text: budgetText,\n    sf_description: sfDescription,\n    approval_message: approvalMessage,\n    approval_header: headerText,\n  },\n}];\n"
+      },
+      "id": "dedb1a14-688f-4d5d-ac84-ef349a8b839d"
+    },
+    {
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1760,
+        400
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "bfbb9475-1b6a-4c59-ade6-a354642e0956",
+                    "leftValue": "={{ $json.is_sales_lead === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "not_lead"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4f785701-de19-4bb7-ab5d-a8d90d025705",
+                    "leftValue": "={{ $json.score }}",
+                    "rightValue": "={{ $json.threshold }}",
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "approval"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "auto_write"
+        }
+      },
+      "notes": "Mirrors eval/scoring.py: not a lead -> LOGGED_ONLY; score >= threshold -> APPROVAL; else AUTO_WRITE.",
+      "id": "a8f20a96-cc67-44e1-a56b-2da26a1b5bd5"
+    },
+    {
+      "name": "Log Not a Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH moved AS (\n  UPDATE hotline.call_events SET status = 'LOGGED_ONLY', updated_at = now()\n   WHERE conversation_id = $1 AND status = 'EXTRACTED'\n  RETURNING conversation_id\n), dec AS (\n  INSERT INTO hotline.decisions AS d (conversation_id, route, intent_score, decided_at)\n  SELECT conversation_id, 'LOGGED_ONLY', $2, now() FROM moved\n  ON CONFLICT (conversation_id) DO UPDATE\n     SET route = 'LOGGED_ONLY', intent_score = EXCLUDED.intent_score, decided_at = EXCLUDED.decided_at\n  RETURNING conversation_id\n)\nSELECT $1::text AS conversation_id, (SELECT count(*) FROM moved) AS status_moved;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id, Number.isInteger($json.score) ? $json.score : null ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "3ebe1b33-b606-46c8-ab66-42c30393cbbb"
+    },
+    {
+      "name": "Auto-write Params",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1980,
+        620
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d30dfcbc-128c-431b-a084-33ef72bcd16f",
+              "name": "route",
+              "value": "AUTO_WRITE",
+              "type": "string"
+            },
+            {
+              "id": "15ac53e0-d213-4b90-a17a-44daf78e7db9",
+              "name": "expected_status",
+              "value": "EXTRACTED",
+              "type": "string"
+            },
+            {
+              "id": "ae949f11-a3a4-4265-a6b1-45698727b722",
+              "name": "rating",
+              "value": "={{ $json.rating_band }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "16cb1520-8aeb-4fa4-a59d-23d69a787784"
+    },
+    {
+      "name": "Mark Pending Approval",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        400
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH moved AS (\n  UPDATE hotline.call_events SET status = 'PENDING_APPROVAL', updated_at = now()\n   WHERE conversation_id = $1 AND status = 'EXTRACTED'\n  RETURNING conversation_id\n), dec AS (\n  INSERT INTO hotline.decisions AS d (conversation_id, route, intent_score)\n  SELECT conversation_id, 'APPROVAL', $2 FROM moved\n  ON CONFLICT (conversation_id) DO UPDATE\n     SET route = 'APPROVAL', intent_score = EXCLUDED.intent_score,\n         approval_outcome = NULL, approver = NULL, decided_at = NULL\n  RETURNING conversation_id\n)\nSELECT conversation_id FROM moved;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id, Number.isInteger($json.score) ? $json.score : null ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "a8d195c6-cf1e-44c9-aaee-ddd3272f06f9"
+    },
+    {
+      "name": "Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dc8561c4-5869-491d-aa2c-c780d78808f6",
+              "leftValue": "={{ !!$json.conversation_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f477f964-3918-4359-a6ed-c53f2e552a19"
+    },
+    {
+      "name": "Post Approval Header",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2420,
+        400
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Lead Context').first().json.approval_channel }}"
+        },
+        "messageType": "text",
+        "text": "={{ $('Lead Context').first().json.approval_header }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "hotlineSlackBot0",
+          "name": "Slack Bot"
+        }
+      },
+      "notes": "Thread parent: its ts lets us reply in-thread with the Lead link after approval.",
+      "id": "bbe63587-dca1-43c9-a409-65f3a6b3a8e7"
+    },
+    {
+      "name": "Ask Approval",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2640,
+        400
+      ],
+      "webhookId": "f35fd290-f17c-4f21-a89b-6cab259d752f",
+      "parameters": {
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Lead Context').first().json.approval_channel }}"
+        },
+        "message": "={{ $('Lead Context').first().json.approval_message }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "limitType": "afterTimeInterval",
+              "resumeAmount": "={{ $('Lead Context').first().json.approval_timeout_min }}",
+              "resumeUnit": "minutes"
+            }
+          },
+          "appendAttribution": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $json.ts }}",
+              "reply_broadcast": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "hotlineSlackBot0",
+          "name": "Slack Bot"
+        }
+      },
+      "notes": "Send and Wait: Approve / Reject. Times out after Config.APPROVAL_TIMEOUT_H.",
+      "id": "a4d753aa-4b7d-4883-aa6e-b3aad99c8f11"
+    },
+    {
+      "name": "Approval Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2860,
+        400
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0eaa631b-8825-4fc2-a388-fe274f94256c",
+                    "leftValue": "={{ ($json.data || {}).approved === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "approved"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "66a84870-1e20-49d7-a761-ce6e77547186",
+                    "leftValue": "={{ ($json.data || {}).approved === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "rejected"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "expired"
+        }
+      },
+      "notes": "No data.approved = the wait limit elapsed.",
+      "id": "6122fcee-5358-4b48-ae15-131fb166cab7"
+    },
+    {
+      "name": "Record Approval",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE hotline.decisions SET approval_outcome = 'APPROVED', approver = $2, decided_at = now()\n WHERE conversation_id = $1\nRETURNING conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Lead Context').first().json.conversation_id, (((($('Ask Approval').first().json.data || {}).responder) || {}).name || ((($('Ask Approval').first().json.data || {}).responder) || {}).username || null) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "20756b3b-7cdd-49c7-a75b-e02ade6c63f0"
+    },
+    {
+      "name": "Approval Params",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "53e328cb-7f6d-4868-aa27-319f7946b237",
+              "name": "route",
+              "value": "APPROVAL",
+              "type": "string"
+            },
+            {
+              "id": "3f8abe25-5c8c-4d63-a538-5851b198786e",
+              "name": "expected_status",
+              "value": "PENDING_APPROVAL",
+              "type": "string"
+            },
+            {
+              "id": "1f87bcba-88d7-4313-a5b8-860fd987af9d",
+              "name": "rating",
+              "value": "Hot",
+              "type": "string"
+            },
+            {
+              "id": "1f769c72-84b9-4b95-aa69-81cd4bdb9825",
+              "name": "approval_outcome",
+              "value": "APPROVED",
+              "type": "string"
+            },
+            {
+              "id": "36e79e01-e0da-4812-a87a-f09491884439",
+              "name": "approver",
+              "value": "={{ (((($('Ask Approval').first().json.data || {}).responder) || {}).name || ((($('Ask Approval').first().json.data || {}).responder) || {}).username || null) || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "2ca4b358-78ab-4a69-a836-9d3757466d6f"
+    },
+    {
+      "name": "Mark Rejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH moved AS (\n  UPDATE hotline.call_events SET status = 'REJECTED', updated_at = now()\n   WHERE conversation_id = $1 AND status = 'PENDING_APPROVAL'\n  RETURNING conversation_id\n)\nUPDATE hotline.decisions d SET approval_outcome = 'REJECTED', approver = $2, decided_at = now()\n  FROM moved WHERE d.conversation_id = moved.conversation_id\nRETURNING d.conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Lead Context').first().json.conversation_id, (((($('Ask Approval').first().json.data || {}).responder) || {}).name || ((($('Ask Approval').first().json.data || {}).responder) || {}).username || null) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "9bee32be-cbef-4f2e-ade1-0a01fd181ae2"
+    },
+    {
+      "name": "Mark Expired",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        660
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH moved AS (\n  UPDATE hotline.call_events SET status = 'EXPIRED', updated_at = now()\n   WHERE conversation_id = $1 AND status = 'PENDING_APPROVAL'\n  RETURNING conversation_id\n)\nUPDATE hotline.decisions d SET approval_outcome = 'EXPIRED', decided_at = now()\n  FROM moved WHERE d.conversation_id = moved.conversation_id\nRETURNING d.conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Lead Context').first().json.conversation_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "alwaysOutputData": true,
+      "id": "c79bfd60-405e-4f48-aed6-218c0ad315f2"
+    },
+    {
+      "name": "Alert Approval Expired",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        3300,
+        660
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HtlnErrorAlert00",
+          "mode": "list",
+          "cachedResultName": "subwf_error_alert"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $('Lead Context').first().json.conversation_id }}",
+            "workflow_name": "={{ $workflow.name }}",
+            "workflow_id": "={{ $workflow.id }}",
+            "execution_id": "={{ $execution.id }}",
+            "failed_node": "Ask Approval",
+            "error_message": "={{ 'Approval not answered within ' + $('Config').first().json.APPROVAL_TIMEOUT_H + ' h; call EXPIRED, nothing written to Salesforce.' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_id",
+              "displayName": "workflow_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "failed_node",
+              "displayName": "failed_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "8c662c1b-26f2-4127-a9cf-f9e83efc7aa9"
+    },
+    {
+      "name": "Build SF Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        620
+      ],
+      "parameters": {
+        "jsCode": "// Shared Salesforce write chain entry (auto-write and approved paths).\n// Maps the extraction to Lead fields per PRD §6.6. The input item carries the\n// path parameters: route, expected_status, rating, approval_outcome, approver.\nconst ctx = $('Lead Context').first().json;\nconst p = $input.first().json;\nconst o = ctx.output || {};\nconst c = o.contact || {};\n\nconst s = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);\nconst cut = (v, n) => (v ? v.slice(0, n) : v); // Salesforce standard field lengths\n\nif (!ctx.sf_base) throw new Error('SALESFORCE_INSTANCE_URL is not set in the n8n environment');\n\nconst email = s(c.email);\nconst emailOk = !!email && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);\n\nconst lead = {\n  // Conversation_Id__c is the upsert key; it is in the URL, not the body.\n  FirstName: cut(s(c.first_name), 40),\n  LastName: cut(s(c.last_name), 80) || 'Unknown caller',\n  Company: cut(s(c.company), 255) || 'Unknown (voice inbound)',\n  Email: emailOk ? cut(email, 80) : null,\n  Phone: cut(s(c.phone) || s(ctx.caller_phone), 40),\n  Title: cut(s(c.job_title), 128),\n  LeadSource: 'Phone Inquiry',\n  Rating: p.rating || ctx.rating_band,\n  Intent_Score__c: ctx.score,\n  Description: ctx.sf_description + (email && !emailOk ? `\\nEmail as heard (not a valid address): ${email}` : ''),\n};\n// Blank fallback = omit the field (an update then keeps what is already there).\nfor (const k of Object.keys(lead)) {\n  if (lead[k] === null || lead[k] === undefined || lead[k] === '') delete lead[k];\n}\n\nconst api = `${ctx.sf_base}/services/data/${ctx.sf_api_version}`;\n\nreturn [{\n  json: {\n    conversation_id: ctx.conversation_id,\n    route: p.route,\n    expected_status: p.expected_status,\n    rating: lead.Rating,\n    intent_score: ctx.score,\n    approval_outcome: p.approval_outcome || null,\n    approver: p.approver || null,\n    lead_upsert_url: `${api}/sobjects/Lead/Conversation_Id__c/${encodeURIComponent(ctx.conversation_id)}`,\n    lead_body: lead,\n    task_url: `${api}/sobjects/Task`,\n    task_subject: 'Voice qualification call',\n    task_activity_date: $now.toFormat('yyyy-MM-dd'),\n    task_description: String(o.call_summary || ''),\n  },\n}];\n"
+      },
+      "id": "437de1f6-e579-48a5-a84e-27174dd8c8d4"
+    },
+    {
+      "name": "SF Upsert Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        620
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Build SF Lead').first().json.lead_upsert_url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build SF Lead').first().json.lead_body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "hotlineSalesforc",
+          "name": "Salesforce OAuth2"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Idempotent upsert on external id Conversation_Id__c (PATCH /sobjects/Lead/Conversation_Id__c/{id}).",
+      "id": "9d5e6393-d8a2-4d7f-a867-0ab7ff404b33"
+    },
+    {
+      "name": "Check Existing Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3960,
+        540
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT sf_task_id FROM hotline.decisions WHERE conversation_id = $1) AS sf_task_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Build SF Lead').first().json.conversation_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "a7f7477d-cd4c-4182-ac12-3873b607dcda"
+    },
+    {
+      "name": "Task Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4180,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "493282cb-481e-4935-aa9a-81592e3158f3",
+              "leftValue": "={{ !!$json.sf_task_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Replay-safe: skip the Task if decisions.sf_task_id is already set.",
+      "notesInFlow": true,
+      "id": "a8c19d5c-d940-4a21-a4f6-fb70544768fa"
+    },
+    {
+      "name": "SF Create Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4400,
+        640
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Build SF Lead').first().json.task_url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ Subject: $('Build SF Lead').first().json.task_subject, WhoId: $('SF Upsert Lead').first().json.id, Status: 'Completed', ActivityDate: $('Build SF Lead').first().json.task_activity_date, Description: $('Build SF Lead').first().json.task_description }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "hotlineSalesforc",
+          "name": "Salesforce OAuth2"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "459e48a3-0458-4dbc-a868-3a33952b2edb"
+    },
+    {
+      "name": "Record Write",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4620,
+        540
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Decision upsert first (replay-safe), then the guarded status move.\nWITH dec AS (\n  INSERT INTO hotline.decisions AS d\n    (conversation_id, route, intent_score, approval_outcome, approver, decided_at, sf_lead_id, sf_task_id)\n  VALUES ($1, $3, $4, $5, $6, now(), $7, $8)\n  ON CONFLICT (conversation_id) DO UPDATE SET\n    route            = EXCLUDED.route,\n    intent_score     = EXCLUDED.intent_score,\n    approval_outcome = COALESCE(EXCLUDED.approval_outcome, d.approval_outcome),\n    approver         = COALESCE(EXCLUDED.approver, d.approver),\n    decided_at       = CASE WHEN EXCLUDED.route = 'APPROVAL' THEN COALESCE(d.decided_at, EXCLUDED.decided_at)\n                            ELSE EXCLUDED.decided_at END,\n    sf_lead_id       = EXCLUDED.sf_lead_id,\n    sf_task_id       = COALESCE(EXCLUDED.sf_task_id, d.sf_task_id)\n  RETURNING conversation_id\n), moved AS (\n  UPDATE hotline.call_events SET status = 'WRITTEN', updated_at = now()\n   WHERE conversation_id = $1 AND status = $2\n  RETURNING conversation_id\n)\nSELECT $1::text AS conversation_id, $3::text AS route, $7::text AS sf_lead_id,\n       (SELECT count(*) FROM dec) AS decision_rows, (SELECT count(*) FROM moved) AS status_moved;",
+        "options": {
+          "queryReplacement": "={{ [ $('Build SF Lead').first().json.conversation_id, $('Build SF Lead').first().json.expected_status, $('Build SF Lead').first().json.route, $('Build SF Lead').first().json.intent_score, $('Build SF Lead').first().json.approval_outcome || null, $('Build SF Lead').first().json.approver || null, $('SF Upsert Lead').first().json.id, $json.sf_task_id || $json.id || null ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "9f862220-9825-428a-a4f7-14871c308736"
+    },
+    {
+      "name": "Approved Path?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4840,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "df40ee70-7a6d-44d5-a218-fec354180fa5",
+              "leftValue": "={{ $json.route === 'APPROVAL' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cd3121be-8bdd-439d-a179-ba8844212232"
+    },
+    {
+      "name": "Reply Lead Link",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        5060,
+        440
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Post Approval Header').first().json.channel }}"
+        },
+        "messageType": "text",
+        "text": "={{ ':white_check_mark: Approved' + ($('Build SF Lead').first().json.approver ? ' by ' + $('Build SF Lead').first().json.approver : '') + '. Hot Lead written to Salesforce: <' + $('Lead Context').first().json.sf_base + '/lightning/r/Lead/' + $json.sf_lead_id + '/view|Open Lead>' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Post Approval Header').first().json.ts }}"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "hotlineSlackBot0",
+          "name": "Slack Bot"
+        }
+      },
+      "id": "4a8868cb-8686-4fa3-a31d-cc64ce2599f5"
+    },
+    {
+      "name": "SF Error Detail",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4180,
+        860
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2f70aac3-4da5-4678-ac99-0b21dcb11623",
+              "name": "failed_node",
+              "value": "={{ $prevNode.name }}",
+              "type": "string"
+            },
+            {
+              "id": "1f9fea4a-200f-4f98-a7b7-6dcd4584607b",
+              "name": "attempt",
+              "value": "={{ $prevNode.runIndex + 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "8466fefb-2a8f-460c-a7cd-ef592e764e1e",
+              "name": "error_json",
+              "value": "={{ JSON.stringify({ httpCode: ($json.error || {}).httpCode || null, message: ($json.error || {}).message || null, description: ($json.error || {}).description || null, cause: { message: (($json.error || {}).cause || {}).message || null, status: (($json.error || {}).cause || {}).status || null } }) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "a23db4df-67ea-4e21-a53b-d675fec8418d"
+    },
+    {
+      "name": "SF Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        860
+      ],
+      "parameters": {
+        "jsCode": "// Error output of \"SF Upsert Lead\" / \"SF Create Task\" (after the node's own\n// retries), pre-extracted by \"SF Error Detail\". Classifies the failure and extracts the Salesforce error body so\n// the alert and call_events.last_error (\"<node>: <message>\") are useful.\nconst d = $input.first().json || {};\nconst failedNode = d.failed_node || 'Salesforce';\nconst w = $('Build SF Lead').first().json;\nlet e;\ntry { e = JSON.parse(d.error_json || 'null'); } catch (err) { e = d.error_json; }\n\n// n8n's error item: {message, description, httpCode?, cause: {name, message: '400 - \"<SF body>\"'}}\nfunction statusOf(err) {\n  if (!err || typeof err !== 'object') return null;\n  const cause = err.cause || {};\n  const cand = err.httpCode || err.statusCode || err.status || (err.response && err.response.status) ||\n    cause.status || cause.statusCode || (cause.response && cause.response.status);\n  if (cand && /^\\d{3}$/.test(String(cand))) return Number(cand);\n  for (const t of [cause.message, err.message]) {\n    const m = String(t || '').match(/^\\s*([1-5]\\d\\d)\\b/);\n    if (m) return Number(m[1]);\n  }\n  return null;\n}\n\nfunction bodyOf(err) {\n  if (err === null || err === undefined) return 'unknown error';\n  if (typeof err !== 'object') return String(err);\n  const cause = err.cause || {};\n  let body = (cause.message && String(cause.message).replace(/^\\s*\\d{3}\\s*-\\s*/, '')) ||\n    err.description || err.error || (err.response && (err.response.data || err.response.body)) || '';\n  if (body && typeof body !== 'string') body = JSON.stringify(body);\n  // Salesforce returns a JSON string inside the message; unwrap one level of quoting.\n  try { const un = JSON.parse(body); if (typeof un === 'string') body = un; } catch (e) { /* keep as is */ }\n  const msg = err.message ? String(err.message) : '';\n  return [msg, body && body !== msg ? body : ''].filter(Boolean).join(' | ') || JSON.stringify(err);\n}\n\nconst MAX_ATTEMPTS = 3; // 1 try + 2 retries for 5xx / timeout (PRD §6.7)\nconst attempt = Number(d.attempt) || 1;\nconst status = statusOf(e);\nconst clientError = !!status && status >= 400 && status < 500;\nconst retry = !clientError && attempt < MAX_ATTEMPTS;\nlet kind;\nif (clientError) kind = 'Salesforce rejected the request (4xx, not retried)';\nelse if (status && status >= 500) kind = `Salesforce server error (5xx) after ${attempt} attempt(s)`;\nelse kind = `timeout or network error after ${attempt} attempt(s)`;\n\nconst message = `${status || 'no status'} ${kind}: ${bodyOf(e)}`.slice(0, 2000);\n\nreturn [{\n  json: {\n    conversation_id: w.conversation_id,\n    expected_status: w.expected_status,\n    route: w.route,\n    failed_node: failedNode,\n    attempt,\n    retry,\n    http_status: status,\n    error_message: message,\n    last_error: `${failedNode}: ${message}`.slice(0, 1000),\n  },\n}];\n"
+      },
+      "id": "85a93487-0a8c-404e-a250-c55222d76e33"
+    },
+    {
+      "name": "Retry SF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4620,
+        860
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b2cc609e-f821-4560-a727-e8b6da94f075",
+              "leftValue": "={{ $json.retry === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "5xx / timeout and fewer than 3 attempts: wait 5 s and re-run the failed node.",
+      "notesInFlow": true,
+      "id": "62f86466-9a15-44a7-add7-9f1d1f708d01"
+    },
+    {
+      "name": "Wait 5s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4840,
+        760
+      ],
+      "webhookId": "f0f173ac-0ea2-41be-aaa2-2de5055bf7be",
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "0acf7c34-03e7-4632-ae81-f3aa84cfb26e"
+    },
+    {
+      "name": "Retry Which?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        5060,
+        760
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8f024d42-9dc8-4f34-a95e-fb8f3c945928",
+                    "leftValue": "={{ $json.failed_node === 'SF Upsert Lead' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "lead"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4acfa425-665c-4d34-a2a8-bc7667ba28d7",
+                    "leftValue": "={{ $json.failed_node === 'SF Create Task' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "task"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "da3ae208-f382-4358-a41a-05632b0969ff"
+    },
+    {
+      "name": "Mark Failed (Salesforce)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4840,
+        960
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE hotline.call_events\n   SET status = 'FAILED', last_error = left($3, 1000), updated_at = now()\n WHERE conversation_id = $1 AND status = $2\nRETURNING conversation_id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id, $json.expected_status, $json.last_error ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "alwaysOutputData": true,
+      "id": "f9d2ee68-092f-4b86-a7dd-3c72c5cf5748"
+    },
+    {
+      "name": "Alert Salesforce Failed",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        5060,
+        960
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HtlnErrorAlert00",
+          "mode": "list",
+          "cachedResultName": "subwf_error_alert"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $('SF Error').first().json.conversation_id }}",
+            "workflow_name": "={{ $workflow.name }}",
+            "workflow_id": "={{ $workflow.id }}",
+            "execution_id": "={{ $execution.id }}",
+            "failed_node": "={{ $('SF Error').first().json.failed_node }}",
+            "error_message": "={{ $('SF Error').first().json.error_message }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "workflow_id",
+              "displayName": "workflow_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "failed_node",
+              "displayName": "failed_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "693732c7-58ec-4fde-a0b2-f73ed0cfbbb9"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Too Short?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Too Short?": {
+      "main": [
+        [
+          {
+            "node": "Log Too Short",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract": {
+      "main": [
+        [
+          {
+            "node": "Extraction Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction Valid?": {
+      "main": [
+        [
+          {
+            "node": "Mark Extracted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Failure": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed (Extract)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed (Extract)": {
+      "main": [
+        [
+          {
+            "node": "Alert Extract Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Extracted": {
+      "main": [
+        [
+          {
+            "node": "Extracted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extracted?": {
+      "main": [
+        [
+          {
+            "node": "Lead Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Context": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Log Not a Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Pending Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auto-write Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Pending Approval": {
+      "main": [
+        [
+          {
+            "node": "Pending?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending?": {
+      "main": [
+        [
+          {
+            "node": "Post Approval Header",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Approval Header": {
+      "main": [
+        [
+          {
+            "node": "Ask Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Approval": {
+      "main": [
+        [
+          {
+            "node": "Approval Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Outcome": {
+      "main": [
+        [
+          {
+            "node": "Record Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Approval": {
+      "main": [
+        [
+          {
+            "node": "Approval Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Expired": {
+      "main": [
+        [
+          {
+            "node": "Alert Approval Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-write Params": {
+      "main": [
+        [
+          {
+            "node": "Build SF Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Params": {
+      "main": [
+        [
+          {
+            "node": "Build SF Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SF Lead": {
+      "main": [
+        [
+          {
+            "node": "SF Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Upsert Lead": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SF Error Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Task": {
+      "main": [
+        [
+          {
+            "node": "Task Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Exists?": {
+      "main": [
+        [
+          {
+            "node": "Record Write",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SF Create Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Create Task": {
+      "main": [
+        [
+          {
+            "node": "Record Write",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SF Error Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Error Detail": {
+      "main": [
+        [
+          {
+            "node": "SF Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Write": {
+      "main": [
+        [
+          {
+            "node": "Approved Path?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved Path?": {
+      "main": [
+        [
+          {
+            "node": "Reply Lead Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Error": {
+      "main": [
+        [
+          {
+            "node": "Retry SF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry SF?": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Salesforce)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5s": {
+      "main": [
+        [
+          {
+            "node": "Retry Which?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Which?": {
+      "main": [
+        [
+          {
+            "node": "SF Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SF Create Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed (Salesforce)": {
+      "main": [
+        [
+          {
+            "node": "Alert Salesforce Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "HtlnErrorAlert00",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

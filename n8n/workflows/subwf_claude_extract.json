@@ -1,0 +1,461 @@
+{
+  "id": "HtlnClaudeExtrct",
+  "name": "subwf_claude_extract",
+  "nodes": [
+    {
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "transcript_text",
+              "type": "string"
+            },
+            {
+              "name": "prompt_dir",
+              "type": "string"
+            },
+            {
+              "name": "model",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "7d454b91-874f-41eb-a019-4687fee6f784"
+    },
+    {
+      "name": "Load Prompt",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "={{ '/prompts/{' + String($json.prompt_dir || '').replace(/[^\\w\\/-]/g, '') + '/system.md,' + String($json.prompt_dir || '').replace(/[^\\w\\/-]/g, '') + '/schema.json,' + String($json.prompt_dir || '').replace(/[^\\w\\/-]/g, '') + '/meta.json,model_params.json}' }}",
+        "options": {}
+      },
+      "notes": "Reads system.md, schema.json, meta.json from /prompts/<prompt_dir> plus /prompts/model_params.json (Amendment 1).",
+      "id": "2a43be7e-752c-443c-aa2b-95476677f84e"
+    },
+    {
+      "name": "Build Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Build the Claude Messages request exactly like eval/request.py\n// (docs/contracts.md \"Claude request shape\" + Amendment 1). Keep the two in sync.\nconst start = $('Start').first().json;\nconst TOOL_DESCRIPTION = 'Record the qualified lead extracted from the call transcript.';\nconst MAX_TOKENS = 1024;\nconst PROFILE_KEYS = ['temperature', 'thinking']; // merge order after max_tokens\n\n// Load Prompt emits one binary item per file; index them by file name.\nconst files = {};\nconst items = $input.all();\nfor (let i = 0; i < items.length; i++) {\n  const bin = items[i].binary && items[i].binary.data;\n  if (!bin) continue;\n  const name = String(bin.fileName || items[i].json.fileName || '').split('/').pop();\n  const buf = await this.helpers.getBinaryDataBuffer(i, 'data');\n  files[name] = buf.toString('utf8');\n}\nfor (const f of ['system.md', 'schema.json', 'meta.json', 'model_params.json']) {\n  if (typeof files[f] !== 'string') {\n    throw new Error(`Prompt file missing: ${f} (prompt_dir=${start.prompt_dir})`);\n  }\n}\n\nconst meta = JSON.parse(files['meta.json']);\nconst schema = JSON.parse(files['schema.json']);\nconst modelParams = JSON.parse(files['model_params.json']);\nif (!meta.version || !meta.tool_name) {\n  throw new Error('meta.json must contain \"version\" and \"tool_name\"');\n}\n\n// input_schema = schema.json minus the top-level \"$schema\" and \"$id\" keys.\nconst inputSchema = {};\nfor (const [k, v] of Object.entries(schema)) {\n  if (k !== '$schema' && k !== '$id') inputSchema[k] = v;\n}\n\n// Per-model profile; unknown model -> no extra keys.\nconst profile = modelParams[start.model] || {};\nconst request = { model: start.model, max_tokens: MAX_TOKENS };\nfor (const k of PROFILE_KEYS) {\n  if (Object.prototype.hasOwnProperty.call(profile, k)) request[k] = JSON.parse(JSON.stringify(profile[k]));\n}\nrequest.system = files['system.md'];\nrequest.tools = [{ name: meta.tool_name, description: TOOL_DESCRIPTION, input_schema: inputSchema }];\nrequest.tool_choice = { type: 'tool', name: meta.tool_name };\nrequest.messages = [\n  { role: 'user', content: '<transcript>\\n' + String(start.transcript_text ?? '') + '\\n</transcript>' },\n];\n\nreturn [{\n  json: {\n    conversation_id: start.conversation_id,\n    prompt_dir: start.prompt_dir,\n    model: start.model,\n    prompt_version: meta.version,\n    tool_name: meta.tool_name,\n    input_schema: inputSchema,\n    request,\n    attempt: 1,\n    started_at: Date.now(),\n  },\n}];\n"
+      },
+      "id": "384b4a02-d0b7-4eaf-a085-c6d0841cf623"
+    },
+    {
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hotlineAnthropic",
+          "name": "Anthropic API (header x-api-key)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "30 s timeout; 2 retries 5 s apart (maxTries 3). Errors continue to Validate so the caller gets valid:false and alerts.",
+      "id": "18368a9a-a3d3-4399-a293-04bd2a6b623d"
+    },
+    {
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Validate the tool_use input against the prompt's JSON Schema (2020-12) and\n// record latency + token usage. Runs once per attempt: run 0 = attempt 1,\n// run 1 = the single retry. Validator: @cfworker/json-schema (contracts.md\n// Amendment 3: n8n 2.x runners forbid the code generation Ajv needs). Errors\n// are normalised to eval/validate.py's Ajv-style {path, message}, sorted.\nconst { Validator } = require('@cfworker/json-schema');\n\nconst attempt = $runIndex + 1;\nconst ctx = attempt === 1 ? $('Build Request').first().json : $('Build Retry').first().json;\nconst res = $input.first().json || {};\nconst latency_ms = Math.max(0, Date.now() - Number(ctx.started_at || Date.now()));\n\nfunction describeError(e) {\n  if (e === null || e === undefined) return 'unknown error';\n  if (typeof e !== 'object') return String(e);\n  const status = e.httpCode || e.statusCode || e.status || (e.response && e.response.status) || '';\n  const parts = [];\n  if (status && !String(e.message || '').startsWith(String(status))) parts.push(String(status));\n  if (e.message) parts.push(String(e.message));\n  let body = (e.cause && e.cause.message) || e.description || e.error || (e.response && e.response.data) || '';\n  if (body && typeof body !== 'string') body = JSON.stringify(body);\n  if (body && body !== e.message) parts.push(String(body));\n  return (parts.join(' - ') || JSON.stringify(e)).slice(0, 900);\n}\n\n// JSON pointer helpers for cfworker's \"#/a/b\" locations.\nconst tokens = (loc) => String(loc || '#').replace(/^#\\/?/, '').split('/').filter((t) => t !== '')\n  .map((t) => decodeURIComponent(t).replace(/~1/g, '/').replace(/~0/g, '~'));\nconst toPath = (loc) => tokens(loc).map((t) => '/' + t.replace(/~/g, '~0').replace(/\\//g, '~1')).join('');\nconst resolve = (root, loc) => tokens(loc).reduce((node, t) => (node == null ? undefined : node[t]), root);\n\n// Leaf keywords -> Ajv default wording (as mirrored by eval/validate.py).\n// Wrapper errors (properties, items, allOf, ...) and cfworker's \"false\"\n// boolean-schema echoes are dropped.\nfunction normalise(schema, errors) {\n  const out = [];\n  for (const e of errors) {\n    const kw = e.keyword;\n    const path = toPath(e.instanceLocation);\n    const val = resolve(schema, e.keywordLocation);\n    const quoted = (String(e.error).match(/\"([^\"]*)\"/) || [])[1];\n    if (kw === 'type') out.push({ path, message: 'must be ' + (Array.isArray(val) ? val.join(',') : val) });\n    else if (kw === 'enum') out.push({ path, message: 'must be equal to one of the allowed values' });\n    else if (kw === 'const') out.push({ path, message: 'must be equal to constant' });\n    else if (kw === 'minimum') out.push({ path, message: 'must be >= ' + val });\n    else if (kw === 'maximum') out.push({ path, message: 'must be <= ' + val });\n    else if (kw === 'minLength') out.push({ path, message: `must NOT have fewer than ${val} characters` });\n    else if (kw === 'maxLength') out.push({ path, message: `must NOT have more than ${val} characters` });\n    else if (kw === 'required') out.push({ path, message: `must have required property '${quoted}'` });\n    else if (kw === 'additionalProperties') {\n      // cfworker (shortCircuit=false) also reports declared properties that\n      // failed their own subschema as \"additional\"; keep only real extras.\n      const parent = resolve(schema, String(e.keywordLocation).replace(/\\/additionalProperties$/, '')) || {};\n      const declared = parent.properties && Object.prototype.hasOwnProperty.call(parent.properties, quoted);\n      if (!declared) out.push({ path, message: 'must NOT have additional properties' });\n    } else if (['properties', 'items', 'prefixItems', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else',\n      '$ref', 'false', 'unevaluatedProperties', 'dependentSchemas', 'contains'].includes(kw)) {\n      continue;\n    } else {\n      out.push({ path, message: String(e.error) });\n    }\n  }\n  return out;\n}\n\nconst usage = res.usage || {};\nlet is_valid = false;\nlet output = null;\nlet validation_errors = null;\nlet api_error = null;\nlet tool_use_id = null;\nlet response_content = null;\n\nif (res.error !== undefined && res.content === undefined) {\n  // Claude call failed after the HTTP node's retries (429/5xx/timeout/4xx).\n  api_error = 'Claude API error: ' + describeError(res.error);\n  validation_errors = [{ path: '', message: api_error }];\n} else {\n  response_content = Array.isArray(res.content) ? res.content : [];\n  const block = response_content.find((b) => b && b.type === 'tool_use' && b.name === ctx.tool_name);\n  if (!block || res.stop_reason === 'max_tokens') {\n    // Amendment 1: truncated or missing tool call = invalid output (retried once).\n    const reason = res.stop_reason === null || res.stop_reason === undefined ? 'None' : res.stop_reason;\n    validation_errors = [{ path: '/', message: `no complete tool_use block (stop_reason=${reason})` }];\n    output = block && block.input !== undefined ? block.input : null;\n  } else {\n    output = block.input === undefined ? null : block.input;\n    const result = new Validator(ctx.input_schema, '2020-12', false).validate(output);\n    if (!result.valid) {\n      validation_errors = normalise(ctx.input_schema, result.errors);\n      if (!validation_errors.length) validation_errors = [{ path: '', message: 'does not match schema' }];\n    }\n  }\n  if (block) tool_use_id = block.id;\n  is_valid = validation_errors === null;\n}\n\nif (validation_errors) {\n  validation_errors.sort((a, b) =>\n    a.path < b.path ? -1 : a.path > b.path ? 1 : a.message < b.message ? -1 : a.message > b.message ? 1 : 0);\n}\n\nreturn [{\n  json: {\n    conversation_id: ctx.conversation_id,\n    attempt,\n    prompt_version: ctx.prompt_version,\n    model: ctx.model,\n    tool_name: ctx.tool_name,\n    is_valid,\n    output,\n    validation_errors,\n    latency_ms,\n    input_tokens: Number.isInteger(usage.input_tokens) ? usage.input_tokens : null,\n    output_tokens: Number.isInteger(usage.output_tokens) ? usage.output_tokens : null,\n    stop_reason: res.stop_reason === undefined ? null : res.stop_reason,\n    api_error,\n    // One retry, only for bad output (never for API errors).\n    retryable: !is_valid && !api_error && attempt === 1,\n    tool_use_id,\n    response_content,\n  },\n}];\n"
+      },
+      "id": "7dd33a51-68e2-41f1-add1-cd78f7c05d3f"
+    },
+    {
+      "name": "Audit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO hotline.extraction_runs\n  (conversation_id, attempt, prompt_version, model, output, is_valid,\n   validation_errors, latency_ms, input_tokens, output_tokens)\nVALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10)\nRETURNING id, conversation_id, attempt, prompt_version, model, output, is_valid, validation_errors;",
+        "options": {
+          "queryReplacement": "={{ [ $json.conversation_id, $json.attempt, $json.prompt_version, $json.model, $json.output === null || $json.output === undefined ? null : JSON.stringify($json.output), $json.is_valid === true, $json.validation_errors ? JSON.stringify($json.validation_errors) : null, $json.latency_ms, $json.input_tokens === undefined ? null : $json.input_tokens, $json.output_tokens === undefined ? null : $json.output_tokens ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "hotlinePostgres0",
+          "name": "Hotline Postgres"
+        }
+      },
+      "id": "77645540-61f0-421d-a05f-cff5f6f44e41"
+    },
+    {
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9f6ac115-879d-49c7-aa75-fa369954a865",
+              "leftValue": "={{ $json.is_valid === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ab08d069-fbf6-4867-aecf-9edd0959a572"
+    },
+    {
+      "name": "Return Valid",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6587ab33-0f05-44a9-a213-22f12730a6ca",
+              "name": "valid",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a366a554-ebe8-4dd8-a4c8-6999bde148ca",
+              "name": "output",
+              "value": "={{ $json.output }}",
+              "type": "object"
+            },
+            {
+              "id": "08045e50-4e9d-441f-acdf-8d963286fba9",
+              "name": "prompt_version",
+              "value": "={{ $json.prompt_version }}",
+              "type": "string"
+            },
+            {
+              "id": "882326e4-e2e7-4a66-a5dc-6304436c6ef3",
+              "name": "model",
+              "value": "={{ $json.model }}",
+              "type": "string"
+            },
+            {
+              "id": "f2b2ec8b-be4e-4f1a-a4df-6c193848d2e6",
+              "name": "attempt",
+              "value": "={{ $json.attempt }}",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "72162c8e-a069-45be-ae6f-85b4286ec107"
+    },
+    {
+      "name": "Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5b5cf0d8-bc18-4360-a2ad-9805a6c79e0f",
+              "leftValue": "={{ $('Validate').item.json.retryable === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Attempt 1 produced bad output (schema errors, truncated or missing tool_use). API errors are not retried here.",
+      "notesInFlow": true,
+      "id": "e9e5fd5d-1363-4eee-a47a-f1d236b36006"
+    },
+    {
+      "name": "Build Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        560
+      ],
+      "parameters": {
+        "jsCode": "// Attempt-2 request, identical to eval/request.py build_retry_request():\n// attempt-1 request + assistant turn (the original response content) + a user\n// tool_result with is_error=true listing the validation errors. If attempt 1\n// had no tool_use block there is nothing to answer, so attempt 1 is re-sent\n// unchanged (contracts.md Amendment 1).\nconst base = $('Build Request').first().json;\nconst v = $('Validate').first().json;\n\nconst request = JSON.parse(JSON.stringify(base.request));\nif (v.tool_use_id) {\n  const lines = (v.validation_errors || []).map((e) => `- ${e.path || '/'}: ${e.message}`);\n  request.messages.push({ role: 'assistant', content: v.response_content });\n  request.messages.push({\n    role: 'user',\n    content: [{\n      type: 'tool_result',\n      tool_use_id: v.tool_use_id,\n      is_error: true,\n      content: 'Schema validation failed:\\n' + lines.join('\\n'),\n    }],\n  });\n}\n\nreturn [{ json: { ...base, request, attempt: 2, started_at: Date.now() } }];\n"
+      },
+      "id": "25ef03b7-2877-4f5e-a392-b5814af31374"
+    },
+    {
+      "name": "Return Invalid",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        380
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6fb66525-b0d9-41e6-a6fa-37b4df4ca51d",
+              "name": "valid",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "379c8974-c87b-4497-ad7b-a41f3eac2fd4",
+              "name": "errors",
+              "value": "={{ $json.validation_errors || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "9ba6410b-40fe-42f2-ad27-85553d6de6f0",
+              "name": "error",
+              "value": "={{ $('Validate').item.json.api_error || ('Schema invalid after ' + $json.attempt + ' attempt(s): ' + ($json.validation_errors || []).map(e => (e.path || '/') + ' ' + e.message).join('; ')) }}",
+              "type": "string"
+            },
+            {
+              "id": "e4dd2f4b-a831-4c06-aaee-5df082022457",
+              "name": "prompt_version",
+              "value": "={{ $json.prompt_version }}",
+              "type": "string"
+            },
+            {
+              "id": "b8f9d1e0-dce9-43ec-a6ab-4d300c3a41cb",
+              "name": "model",
+              "value": "={{ $json.model }}",
+              "type": "string"
+            },
+            {
+              "id": "154fa6aa-59ad-4a19-ac48-5a213f42217f",
+              "name": "attempt",
+              "value": "={{ $json.attempt }}",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "e9059ac4-ea86-4031-ab8e-c23f7cfb325a"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Load Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Prompt": {
+      "main": [
+        [
+          {
+            "node": "Build Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Return Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry?": {
+      "main": [
+        [
+          {
+            "node": "Build Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Retry": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

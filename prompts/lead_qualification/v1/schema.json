@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotline.local/prompts/lead_qualification/schema.json",
+  "title": "record_lead",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "is_sales_lead",
+    "contact",
+    "need_summary",
+    "budget",
+    "timeline",
+    "decision_maker",
+    "buying_intent_score",
+    "intent_evidence",
+    "follow_up_required",
+    "call_summary"
+  ],
+  "properties": {
+    "is_sales_lead": {
+      "type": "boolean",
+      "description": "True only if the caller is a prospective buyer. False for wrong numbers, support requests, spam, job seekers and vendors."
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_name", "last_name", "email", "phone", "company", "job_title"],
+      "properties": {
+        "first_name": {"type": ["string", "null"], "description": "Only if stated by the caller."},
+        "last_name": {"type": ["string", "null"], "description": "Only if stated by the caller."},
+        "email": {"type": ["string", "null"], "description": "Only if stated by the caller."},
+        "phone": {"type": ["string", "null"], "description": "Only if stated by the caller."},
+        "company": {"type": ["string", "null"], "description": "Only if stated by the caller."},
+        "job_title": {"type": ["string", "null"], "description": "Only if stated by the caller."}
+      }
+    },
+    "need_summary": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "What the caller needs, in one or two sentences."
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mentioned", "amount_usd", "period"],
+      "properties": {
+        "mentioned": {"type": "boolean", "description": "True if the caller mentioned any budget or spend figure."},
+        "amount_usd": {"type": ["number", "null"], "minimum": 0, "description": "Budget amount in US dollars, or null."},
+        "period": {"type": "string", "enum": ["monthly", "annual", "one_time", "unknown"]}
+      }
+    },
+    "timeline": {
+      "type": "string",
+      "enum": ["immediate", "within_3_months", "within_12_months", "exploring", "unknown"]
+    },
+    "decision_maker": {
+      "type": "string",
+      "enum": ["yes", "no", "unknown"]
+    },
+    "buying_intent_score": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "1-10 per the scoring rubric in the system prompt."
+    },
+    "intent_evidence": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Paraphrase of what the caller said that justifies the score."
+    },
+    "follow_up_required": {
+      "type": "boolean",
+      "description": "True if a human should follow up with the caller."
+    },
+    "call_summary": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Neutral summary of the call for the Salesforce Task."
+    }
+  }
+}
