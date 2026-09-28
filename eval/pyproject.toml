@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Eval harness for the Hotline lead-qualification prompt"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "anthropic==1.8.0",
     "jsonschema==4.26.0",
 ]
 

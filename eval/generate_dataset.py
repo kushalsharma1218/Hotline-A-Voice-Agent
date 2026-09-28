@@ -1,7 +1,7 @@
 """Turn scenario seeds into synthetic call transcripts for hand labeling (F4.1).
 
     uv run --project eval python eval/generate_dataset.py \
-        [--seeds eval/seeds.jsonl] [--out eval/generated_transcripts.jsonl] [--model claude-sonnet-5]
+        [--seeds eval/seeds.jsonl] [--out eval/generated_transcripts.jsonl] [--model gemini-3.8-flash]
 
 Input rows (eval/seeds.jsonl):
     {"id": "hot_01", "category": "hot", "adversarial": null, "scenario": "..."}
@@ -12,20 +12,20 @@ and copy into eval/dataset.jsonl:
      "expected": null, "expected_route": null}
 
 This script only drafts transcripts. It never labels them: `expected` is
-written by hand so the eval does not grade Claude with Claude.
+written by hand so the eval does not grade the model with itself.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from config import DEFAULT_MODEL, EVAL_DIR
+from gemini import GeminiClient, api_key_from_env
 from request import model_params
 
 FIRST_LINE = ("Agent: Hi, this is Maya, an AI assistant for Acme Voice. This call is recorded "
@@ -54,10 +54,10 @@ def build_generation_request(seed: dict, model: str) -> dict:
         f"Scenario: {seed['scenario']}\n\n"
         "Write the transcript."
     )
-    # Same per-model profile as the extractor (prompts/model_params.json):
-    # no temperature on claude-sonnet-5, which rejects it.
-    return {"model": model, "max_tokens": 4000, **model_params(model), "system": SYSTEM,
-            "messages": [{"role": "user", "content": user}]}
+    # Same per-model profile as the extractor (prompts/model_params.json).
+    return {"systemInstruction": {"parts": [{"text": SYSTEM}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"maxOutputTokens": 4000, **model_params(model)}}
 
 
 def clean_transcript(text: str) -> str:
@@ -70,8 +70,9 @@ def clean_transcript(text: str) -> str:
 
 
 def generate_one(client, seed: dict, model: str) -> dict:
-    resp = client.messages.create(**build_generation_request(seed, model))
-    text = "".join(b.text for b in resp.content if b.type == "text")
+    resp = client.generate(model, build_generation_request(seed, model))
+    parts = ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
     return {
         "id": seed["id"],
         "category": seed["category"],
@@ -88,17 +89,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seeds", type=Path, default=EVAL_DIR / "seeds.jsonl")
     ap.add_argument("--out", type=Path, default=EVAL_DIR / "generated_transcripts.jsonl")
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--concurrency", type=int, default=4)
+    ap.add_argument("--concurrency", type=int, default=2)
     args = ap.parse_args(argv)
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        print("error: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+    api_key = api_key_from_env()
+    if not api_key:
+        print("error: GEMINI_API_KEY is not set.", file=sys.stderr)
         return 2
     seeds = [json.loads(l) for l in args.seeds.read_text(encoding="utf-8").splitlines() if l.strip()]
 
-    import anthropic
-
-    client = anthropic.Anthropic(max_retries=3)
+    client = GeminiClient(api_key, max_retries=3)
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
         rows = list(pool.map(lambda s: generate_one(client, s, args.model), seeds))
     with open(args.out, "w", encoding="utf-8") as f:

@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no results in {RESULTS_DIR}; run eval/run_eval.py first", file=sys.stderr)
         return 1
 
-    runs.sort(key=lambda d: (d["prompt_version"], d["model"] != "claude-sonnet-5", d["model"]))
+    runs.sort(key=lambda d: (d["prompt_version"], d["model"] != "gemini-3.8-flash", d["model"]))
     print(markdown_table([table_row(d["prompt_version"], d["model"], d["metrics"]) for d in runs]))
     print()
     for d in runs:

@@ -240,15 +240,19 @@ and run `docker compose up -d` again.
 ### 2. Configure `.env`
 
 ```bash
-cp .env.example .env
-openssl rand -hex 32    # run once for each of N8N_ENCRYPTION_KEY, INTERNAL_TOKEN, ADMIN_TOKEN
+python scripts/gen_secrets.py    # Windows: py scripts/gen_secrets.py
 ```
 
-Edit `.env`:
+The script copies `.env.example` to `.env` if `.env` does not exist yet. It
+then sets `N8N_ENCRYPTION_KEY`, `INTERNAL_TOKEN` and `ADMIN_TOKEN` to random
+64-character hex values. It only writes a key that is empty or still holds its
+`replace-with-…` placeholder, so running it again never rotates a real value.
+That matters because changing `N8N_ENCRYPTION_KEY` after you have created
+credentials makes them unreadable. It needs only the Python standard library.
+To generate the values by hand instead, run `openssl rand -hex 32` once per key.
 
-- `N8N_ENCRYPTION_KEY`, `INTERNAL_TOKEN`, `ADMIN_TOKEN`: set each to a
-  generated value. Never change `N8N_ENCRYPTION_KEY` after you have created
-  credentials.
+Then edit `.env` for the values that cannot be generated locally:
+
 - `WEBHOOK_URL=https://<n8n-tunnel>/` (with a trailing slash) and
   `N8N_EDITOR_BASE_URL=https://<n8n-tunnel>`.
 - `ELEVENLABS_AGENT_ID`, `ELEVENLABS_WEBHOOK_SECRET`: fill these in at
@@ -372,8 +376,8 @@ Follow [`agent/agent_prompt.md`](agent/agent_prompt.md):
 | Salesforce instance URL | Setup → My Domain (`https://<domain>.my.salesforce.com`) | `.env` `SALESFORCE_INSTANCE_URL` (used to build Lead links in Slack) |
 | Salesforce consumer key and secret | Your External Client App / Connected App → Manage Consumer Details | n8n credential `Salesforce OAuth2` |
 | Slack bot token | api.slack.com/apps → your app → OAuth & Permissions (`xoxb-…`) | n8n credential `Slack Bot` |
-| `INTERNAL_TOKEN` | `openssl rand -hex 32` | `.env` **and** n8n credential `Hotline Ingress Token (header auth)` |
-| `ADMIN_TOKEN`, `N8N_ENCRYPTION_KEY` | `openssl rand -hex 32` | `.env` |
+| `INTERNAL_TOKEN` | `scripts/gen_secrets.py` (or `openssl rand -hex 32`) | `.env` **and** n8n credential `Hotline Ingress Token (header auth)` |
+| `ADMIN_TOKEN`, `N8N_ENCRYPTION_KEY` | `scripts/gen_secrets.py` (or `openssl rand -hex 32`) | `.env` |
 | Postgres user, password, database | You choose them (defaults in `.env.example`) | `.env` **and** n8n credential `Hotline Postgres` |
 
 Salesforce and Slack secrets live only in n8n credentials, never in `.env`.
@@ -530,6 +534,7 @@ Follow-ups from the limitations:
 │       ├── v1/  system.md  schema.json  meta.json
 │       └── v2/  system.md  schema.json  meta.json
 └── scripts/
+    ├── gen_secrets.py          # generates local secrets into .env
     ├── smoke_test.sh           # live-stack negative/idempotency checks
     └── send_test_webhook.py    # signed test webhook from a dataset row
 ```

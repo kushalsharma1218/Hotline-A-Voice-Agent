@@ -1,0 +1,62 @@
+Start with cp .env.example .env, then fill it in as below. The ones marked generate are values you make up yourself. Everything else comes from a service dashboard. Menu names on these sites change from time to time, so if a path doesn't match exactly, look for the nearest equivalent.
+
+Generate these yourself
+
+Run this in Git Bash, once for each value:
+openssl rand -hex 32
+- N8N_ENCRYPTION_KEY: generate it once and never change it. If it changes, n8n can no longer decrypt its saved credentials.
+- INTERNAL_TOKEN: you'll paste this same value into an n8n credential later.
+- ADMIN_TOKEN
+- POSTGRES_PASSWORD: optional locally. If you change it, update it inside DATABASE_URL too.
+
+Anthropic → ANTHROPIC_API_KEY
+
+1. Go to console.anthropic.com, then Settings → API Keys → Create Key.
+2. Copy the key; it starts with sk-ant-. It's shown only once.
+3. You also need a small amount of credit under Billing.
+
+Tunnel → WEBHOOK_URL, N8N_EDITOR_BASE_URL
+
+ElevenLabs and Slack need a public URL that reaches your machine.
+- ngrok: sign up at ngrok.com, copy your authtoken from the dashboard, run ngrok config add-authtoken <token>, then run ngrok http 8000.
+- Cloudflare, no account needed: cloudflared tunnel --url http://localhost:8000.
+
+It prints an https://….ngrok-free.app (or trycloudflare.com) URL. One catch: a single tunnel exposes only one port. The ingress runs on 8000 and n8n on 5678, and they both need one. Use ngrok's config file with two tunnels, or run two cloudflared processes.
+- https://<ingress-tunnel>/webhooks/elevenlabs goes into ElevenLabs.
+- The n8n tunnel URL goes into WEBHOOK_URL, with a trailing /, and into N8N_EDITOR_BASE_URL.
+
+ElevenLabs → ELEVENLABS_AGENT_ID, ELEVENLABS_WEBHOOK_SECRET
+
+1. elevenlabs.io → Agents (the Conversational AI section). Create the agent and paste in the prompt and first message from agent/agent_prompt.md.
+2. Agent ID: open the agent. The ID is shown under its name and is also in the page URL. It looks like agent_xxxx….
+3. Webhook secret: open the agent settings or the workspace Settings → Webhooks, and add a post-call webhook:
+   - URL: https://<ingress-tunnel>/webhooks/elevenlabs
+   - Event: transcription
+   - When you save, it shows an HMAC secret. Copy it into ELEVENLABS_WEBHOOK_SECRET.
+
+Salesforce → SALESFORCE_INSTANCE_URL, plus an n8n credential
+
+1. Sign up for a free Developer Edition org at developer.salesforce.com/signup.
+2. Instance URL: after you log in, it's the domain in your browser, e.g. https://yourname-dev-ed.develop.my.salesforce.com. It's also under Setup → My Domain.
+3. Custom fields: go to Setup → Object Manager → Lead → Fields & Relationships → New and create:
+   - Conversation_Id (Text, length 64, with External ID and Unique ticked)
+   - Intent_Score (Number, 2 digits, 0 decimals)
+4. OAuth app: go to Setup → App Manager → New External Client App (or New Connected App, whichever your org offers).
+   - Turn on OAuth.
+   - Callback URL: https://<n8n-tunnel>/rest/oauth2-credential/callback
+   - Scopes: api and refresh_token, offline_access
+   - Afterwards, Manage Consumer Details shows the Consumer Key and Consumer Secret. They go into n8n, not .env.
+
+Slack → n8n credential only
+
+1. Go to api.slack.com/apps → Create New App → From scratch, and pick your workspace.
+2. Under OAuth & Permissions → Bot Token Scopes, add chat:write. Click Install to Workspace and copy the Bot User OAuth Token (xoxb-…). It goes into n8n.
+3. For the Approve/Reject buttons, open Interactivity & Shortcuts, turn it on, and set the Request URL to your n8n tunnel URL. n8n's Slack node docs give the exact path.
+4. In Slack, create #lead-approvals and #hotline-alerts. In each one, run /invite @YourAppName.
+
+Where each secret ends up
+
+- In .env: Postgres, tunnel URLs, the ElevenLabs agent ID and webhook secret, INTERNAL_TOKEN, ADMIN_TOKEN, the Anthropic key, and the Salesforce instance URL.
+- In the n8n UI under Credentials, where they're encrypted: the Anthropic key, the Salesforce consumer key and secret, the Slack xoxb- token, and INTERNAL_TOKEN again as a Header Auth credential. The N8N agent is writing n8n/workflows/README.md with the exact credential names the workflows expect.
+
+The one I'd do first is ANTHROPIC_API_KEY. Once it's in .env, I can have an agent run the full eval and put real numbers in the README. You don't need to paste any keys into this chat; putting them in .env is enough.

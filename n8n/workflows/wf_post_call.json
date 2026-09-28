@@ -60,7 +60,7 @@
             {
               "id": "c0edc3b8-3884-4008-aee4-74879d92db2f",
               "name": "MODEL",
-              "value": "claude-sonnet-5",
+              "value": "gemini-3.8-flash",
               "type": "string"
             },
             {

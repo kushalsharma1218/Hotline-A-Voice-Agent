@@ -31,13 +31,13 @@ three references resolve without editing anything: the Execute Workflow nodes
 |---|---|---|---|
 | `Hotline Postgres` | Postgres | host `postgres`, database/user/password = `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`, port 5432, SSL disable | every Postgres node |
 | `Hotline Ingress Token (header auth)` | Header Auth | Name `X-Hotline-Token`, Value = `INTERNAL_TOKEN` | Webhook |
-| `Anthropic API (header x-api-key)` | Header Auth | Name `x-api-key`, Value = your Anthropic API key | Call Claude |
+| `Gemini API (header x-goog-api-key)` | Header Auth | Name `x-goog-api-key`, Value = your Gemini API key (`GEMINI_API_KEY`) | Call Gemini |
 | `Salesforce OAuth2` | Salesforce OAuth2 API | Connected App (or External Client App) consumer key/secret; scopes `api refresh_token`; sign in as the integration user (PRD §6.6) | SF Upsert Lead, SF Create Task |
 | `Slack Bot` | Slack API (Access Token) | Bot token `xoxb-...` with scope `chat:write`. Invite the bot to `#lead-approvals` and `#hotline-alerts` | Post Approval Header, Ask Approval, Reply Lead Link, Post Alert |
 
 Each node stores its credential as `{id: <placeholder>, name: <name above>}`.
 The placeholder IDs are `hotlinePostgres0`, `hotlineIngressTk`,
-`hotlineAnthropic`, `hotlineSalesforc` and `hotlineSlackBot0`. You can link the
+`hotlineGeminiKey`, `hotlineSalesforc` and `hotlineSlackBot0`. You can link the
 credentials in either of two ways:
 
 - **UI (simplest).** Create the five credentials in the n8n UI, then import the

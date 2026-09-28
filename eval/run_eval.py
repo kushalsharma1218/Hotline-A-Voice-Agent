@@ -1,11 +1,12 @@
 """Run a prompt version + model against the labeled dataset.
 
     uv run --project eval python eval/run_eval.py \
-        --prompt lead_qualification/v1 --model claude-sonnet-5 --concurrency 4
+        --prompt lead_qualification/v1 --model gemini-3.8-flash --concurrency 2
 
-Each case follows the production extractor (subwf_claude_extract): build the
-request with ``request.build_request``, call Claude, validate the tool input,
-and on failure retry once with the validation errors as a ``tool_result``.
+Each case follows the production extractor (subwf_llm_extract): build the
+request with ``request.build_request``, call Gemini, validate the function-call
+arguments, and on failure retry once with the validation errors as a
+``functionResponse``. Free-tier rate limits (429) are waited out by the client.
 Writes ``eval/results/<prompt with / as _>__<model>.json`` (``__limit<N>`` is
 appended for partial runs) and prints the PRD 9.3 table plus failures.
 """
@@ -14,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,7 +22,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import DATASET_PATH, DEFAULT_MODEL, DEFAULT_PROMPT, RESULTS_DIR, price_for
-from request import Prompt, build_request, build_retry_request, load_prompt
+from gemini import GeminiClient, api_key_from_env
+from request import (Prompt, build_request, build_retry_request, incomplete_message,
+                     load_prompt, parse_response)
 from scoring import aggregate, score_case
 from validate import validate
 
@@ -49,54 +51,43 @@ def results_path(prompt_dir: str, model: str, limit: int | None) -> Path:
     return RESULTS_DIR / f"{name}.json"
 
 
-def _call(client, req: dict) -> tuple[list[dict], dict]:
+def _call(client, model: str, req: dict, tool_name: str) -> tuple[dict, dict]:
     t0 = time.perf_counter()
-    resp = client.messages.create(**req)
+    resp = client.generate(model, req)
     latency_ms = int((time.perf_counter() - t0) * 1000)
-    content = [b.to_dict() for b in resp.content]
+    parsed = parse_response(resp, tool_name)
     info = {
         "latency_ms": latency_ms,
-        "input_tokens": resp.usage.input_tokens,
-        "output_tokens": resp.usage.output_tokens,
-        "stop_reason": resp.stop_reason,
+        "input_tokens": parsed["input_tokens"],
+        "output_tokens": parsed["output_tokens"],
+        "finish_reason": parsed["finish_reason"],
     }
-    return content, info
-
-
-def _tool_use(content: list[dict], tool_name: str) -> dict | None:
-    for b in content:
-        if b.get("type") == "tool_use" and b.get("name") == tool_name:
-            return b
-    return None
-
-
-def incomplete_message(stop_reason: str | None) -> str:
-    return f"no complete tool_use block (stop_reason={stop_reason})"
+    return parsed, info
 
 
 def extract(client, prompt: Prompt, transcript: str, model: str) -> dict:
-    """Run attempt 1 and, if invalid, attempt 2. Mirrors subwf_claude_extract.
+    """Run attempt 1 and, if invalid, attempt 2. Mirrors subwf_llm_extract.
 
-    Invalid = schema errors, ``stop_reason == "max_tokens"``, or no tool_use
-    block. The retry answers the tool_use with an error tool_result; with no
-    tool_use block to answer, it re-sends attempt 1 unchanged.
+    Invalid = schema errors, ``finish_reason == "MAX_TOKENS"``, or no
+    functionCall. The retry answers the call with an error functionResponse;
+    with no call to answer, it re-sends attempt 1 unchanged.
     """
     attempts: list[dict] = []
     req = build_request(prompt, transcript, model)
     output = None
     for attempt in (1, 2):
         try:
-            content, info = _call(client, req)
-        except Exception as exc:  # API error after SDK retries: the call FAILS
+            parsed, info = _call(client, model, req, prompt.tool_name)
+        except Exception as exc:  # API error after client retries: the call FAILS
             attempts.append({"attempt": attempt, "valid": False, "api_error": f"{type(exc).__name__}: {exc}"})
             break
-        block = _tool_use(content, prompt.tool_name)
-        if block is None or info["stop_reason"] == "max_tokens":
-            # Amendment 1: truncated or missing tool call = invalid output.
-            errors = [{"path": "/", "message": incomplete_message(info["stop_reason"])}]
-            candidate = block.get("input") if block is not None else None
+        call = parsed["call"]
+        if call is None or info["finish_reason"] == "MAX_TOKENS":
+            # Amendment 1: truncated or missing function call = invalid output.
+            errors = [{"path": "/", "message": incomplete_message(info["finish_reason"])}]
+            candidate = call.get("args") if call is not None else None
         else:
-            candidate = block.get("input")
+            candidate = call.get("args", {})
             errors = validate(candidate, prompt.schema)
         attempts.append({"attempt": attempt, "valid": not errors, "errors": errors,
                          "output": candidate, **info})
@@ -104,17 +95,17 @@ def extract(client, prompt: Prompt, transcript: str, model: str) -> dict:
             output = candidate
             break
         if attempt == 1:
-            if block is not None:
-                req = build_retry_request(req, content, block["id"], errors)
-            # No tool_use block to answer: re-send attempt 1 unchanged.
+            if call is not None:
+                req = build_retry_request(req, parsed["parts"], prompt.tool_name, errors, call.get("id"))
+            # No function call to answer: re-send attempt 1 unchanged.
     return {
         "output": output,
         "attempts": attempts,
         "valid_first_try": bool(attempts and attempts[0]["valid"]),
         "valid_final": output is not None,
         "latency_ms": sum(a.get("latency_ms", 0) for a in attempts) or None,
-        "input_tokens": sum(a.get("input_tokens", 0) for a in attempts),
-        "output_tokens": sum(a.get("output_tokens", 0) for a in attempts),
+        "input_tokens": sum(a.get("input_tokens") or 0 for a in attempts),
+        "output_tokens": sum(a.get("output_tokens") or 0 for a in attempts),
     }
 
 
@@ -200,13 +191,15 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--prompt", default=DEFAULT_PROMPT, help="folder under prompts/, e.g. lead_qualification/v1")
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--concurrency", type=int, default=4)
+    ap.add_argument("--concurrency", type=int, default=2,
+                    help="parallel calls; keep low on the free tier (about 10 requests/minute)")
     ap.add_argument("--dataset", type=Path, default=DATASET_PATH)
     ap.add_argument("--limit", type=int, default=None, help="only the first N rows")
     args = ap.parse_args(argv)
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        print("error: ANTHROPIC_API_KEY is not set. Export it (see .env.example) and re-run.",
+    api_key = api_key_from_env()
+    if not api_key:
+        print("error: GEMINI_API_KEY is not set. Export it (see .env.example) and re-run.",
               file=sys.stderr)
         return 2
     if not args.dataset.exists():
@@ -215,15 +208,13 @@ def main(argv: list[str] | None = None) -> int:
     if price_for(args.model) is None:
         print(f"warning: no pricing for {args.model} in config.py; cost will be n/a", file=sys.stderr)
 
-    import anthropic  # imported late so --help and the key check work without it
-
     prompt = load_prompt(args.prompt)
     rows = load_dataset(args.dataset)
     if args.limit:
         rows = rows[: args.limit]
 
-    # max_retries=2 mirrors the n8n HTTP node (429/5xx retried twice).
-    client = anthropic.Anthropic(max_retries=2, timeout=60.0)
+    # max_retries=2 mirrors the n8n HTTP node (5xx retried twice).
+    client = GeminiClient(api_key, max_retries=2, timeout=60.0)
     print(f"Running {len(rows)} cases: {prompt.version} on {args.model} (concurrency {args.concurrency})")
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:

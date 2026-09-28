@@ -180,7 +180,7 @@ def test_aggregate_metrics(valid_lead):
         _result(wrong, exp_inj, "AUTO_WRITE", adversarial="prompt_injection", latency=3000),
         _result(None, valid_lead, "APPROVAL", first=False, final=False, latency=4000),
     ]
-    m = aggregate(results, model="claude-sonnet-5")
+    m = aggregate(results, model="gemini-2.5-flash")
     assert m["n"] == 4
     assert m["routing_accuracy"] == 0.5
     assert m["score_within_1_accuracy"] == 0.5
